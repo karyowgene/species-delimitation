@@ -1,0 +1,43 @@
+configfile: "config.yaml"
+
+import os
+os.makedirs(fastqc_dir, exist_ok=True)
+
+# Find all FASTQ files recursively
+wildcard_constraints:
+    ext = r"|".join([re.escape(ext) for ext in config['file_extensions']])
+
+PATHS, SAMPLES, EXTS = glob_wildcards(
+    os.path.join(config['input_dir'], "{path}/{sample}.{ext}")
+)
+
+rule all:
+    input:
+        f"{output_dir}/multiqc_report.html"
+
+rule fastqc:
+    input:
+        os.path.join(config['input_dir'], "{path}/{sample}.{ext}")
+    output:
+        html = f"{fastqc_dir}/{{path}}/{{sample}}_fastqc.html",
+        zip = f"{fastqc_dir}/{{path}}/{{sample}}_fastqc.zip"
+    threads: config['fastqc']['threads']
+    resources:
+        mem_mb = config['fastqc']['mem_mb'],
+        time = config['fastqc']['time']
+    shell:
+        "mkdir -p $(dirname {output.html}) && "
+        "fastqc {input} --outdir $(dirname {output.html}) --threads {threads}"
+
+rule multiqc:
+    input:
+        expand(f"{fastqc_dir}/{{path}}/{{sample}}_fastqc.html", 
+               zip(zip(PATHS, SAMPLES)), path=PATHS, sample=SAMPLES)
+    output:
+        f"{output_dir}/multiqc_report.html"
+    threads: config['multiqc']['threads']
+    resources:
+        mem_mb = config['multiqc']['mem_mb'],
+        time = config['multiqc']['time']
+    shell:
+        "multiqc {fastqc_dir} -o {output_dir}"
